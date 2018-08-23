@@ -1,0 +1,165 @@
+package helpers;
+
+import dblib.ConnectionsPool;
+import model.Entity;
+import model.enums.Genre;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+
+/**
+ * Created by gaara on 3/19/17.
+ */
+public class Saver<T extends Entity> {
+
+    Class<T> aClass;
+    ConnectionsPool conPol;
+    public Saver(Class<T> aClass) {
+        conPol = ConnectionsPool.getInstance();
+        this.aClass = aClass;
+    }
+
+    public void save(T obj)
+    {
+        final String SAVE_OBJ = "INSERT INTO %s (%s) VALUES (%s)";
+
+        ArrayList<String> fields = new ArrayList<>();
+        ArrayList<String> values = new ArrayList<>();
+        String id = "";
+        //Получаем поля из класа
+        for (Field field: aClass.getDeclaredFields()) {
+            fields.add(field.getName());
+        }
+
+        //Получаем ид
+        try {
+            Method methodgetId = aClass.getMethod("getId");
+            id = String.valueOf(methodgetId.invoke(obj));
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+
+        for (String field : fields) {
+
+            Method method = null;
+            //Извлекаем метод гет из класса
+            try {
+                method = aClass.getMethod("get" + field);
+            } catch (NoSuchMethodException e) {
+                e.printStackTrace();
+            }
+            //Запускаем метод и сохраняем значение в values
+            try {
+                if (method != null) {
+                    Object answer;
+                    answer = method.invoke(obj);
+                    if(answer.getClass() == String.class)
+                    {
+                        values.add((String)answer);
+                    }
+                    else if(answer.getClass() == Integer.class)
+                    {
+                        values.add(String.valueOf(answer));
+                    }
+                    else if(answer.getClass() == Genre.class)
+                    {
+                        values.add(String.valueOf(answer));
+                    }
+                }
+                else
+                {
+                    System.out.println("Method not exists");
+                }
+            } catch (IllegalAccessException e) {
+                e.printStackTrace();
+            } catch (InvocationTargetException e) {
+                e.printStackTrace();
+            }
+        }
+        //Создаем строку полей готовую для вставки в запрос
+        StringBuilder fieldsWithComma = new StringBuilder();
+        fieldsWithComma.append("id,");
+        for (int i = 0; i < fields.size(); i++) {
+            if(i != fields.size() -1)
+            {
+                fieldsWithComma.append(fields.get(i) + ",");
+            }
+            else
+            {
+                fieldsWithComma.append(fields.get(i));
+            }
+        }
+        //Создаем строку значений готовую для вставки в запрос
+        StringBuilder valuesWithComma = new StringBuilder();
+        valuesWithComma.append('\'' +id +"\',");
+        for (int i = 0; i < values.size(); i++) {
+            if(i != values.size() -1)
+            {
+                valuesWithComma.append('\'' + values.get(i) + "\',");
+            }
+            else
+            {
+                valuesWithComma.append('\'' + values.get(i) + '\'');
+            }
+        }
+
+        String sql = String.format(SAVE_OBJ,aClass.getSimpleName(),fieldsWithComma,valuesWithComma);
+
+        try(Connection connection = conPol.getConnection();
+        PreparedStatement preparedStatement = connection.prepareStatement(sql))
+        {
+            preparedStatement.executeUpdate();
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        System.out.println(values);
+
+
+    }
+    public void load(int id)
+    {
+        ArrayList<String> fields = new ArrayList<>();
+        ArrayList<String> values = new ArrayList<>();
+
+        final String LOAD_OBJ = "SELECT * FROM %s WHERE id=%d";
+
+        String sql = String.format(LOAD_OBJ,aClass.getSimpleName(),id);
+        try(Connection connection = conPol.getConnection();
+            PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+            ResultSet resultSet = preparedStatement.executeQuery();
+
+            for (String field : fields) {
+
+                Method method = null;
+                //Извлекаем метод set из класса
+                try {
+                    method = aClass.getMethod("set" + field);
+                    resultSet.getString(field)
+                } catch (NoSuchMethodException e) {
+                    e.printStackTrace();
+                }
+
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+
+
+            //movie = new Movie();             movie.setId(resultSet.getInt("id"));
+
+
+    }
+}
